@@ -1,0 +1,61 @@
+# --------------------
+# OS / Editor 
+# --------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+.vscode/
+.idea/
+
+# --------------------
+# Python
+# --------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+.env
+.venv
+venv/
+env/
+
+# --------------------
+# Jupyter
+# --------------------
+.ipynb_checkpoints/
+
+# --------------------
+# Data 
+# --------------------
+data/processed/*
+data/outputs/*
+
+!data/processed/.gitkeep
+!data/outputs/.gitkeep
+
+# --------------------
+# Audio / Music artifacts
+# --------------------
+*.wav
+*.mp3
+*.flac
+*.midi
+*.mid
+*.musicxml
+*.xml
+*.pdf
+*.png
+
+# --------------------
+# ML / Models 
+# --------------------
+models/
+checkpoints/
+*.pt
+*.pth
+*.onnx
