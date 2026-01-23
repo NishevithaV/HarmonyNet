@@ -1,1 +1,16 @@
+# Audio processing
+librosa>=0.10.0          # Audio loading, resampling, feature extraction
+soundfile>=0.12.0        # Backend for librosa (reads WAV, FLAC, OGG)
 
+# ML inference
+basic-pitch>=0.3.0       # Spotify's piano transcription model (uses TensorFlow Lite internally)
+
+# Music representation & notation
+music21>=9.1.0           # Music theory library, MusicXML generation
+midiutil>=1.2.1          # MIDI file creation (intermediate format)
+
+# CLI
+click>=8.1.0             # Command-line interface framework
+
+# Core
+numpy>=1.24.0            # Numerical operations
