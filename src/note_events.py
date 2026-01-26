@@ -3,7 +3,7 @@ This module defines the core data structures used throughout the pipeline for mu
 Formula used for MIDI pitch: MIDI_pitch = 12 * (octave + 1) + semitone_offset.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List
 
 # Semitone offsets 
