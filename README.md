@@ -12,4 +12,6 @@ transcription quality.
 Version 1 focuses on building a reliable end-to-end pipeline for solo piano transcription.
 The goal is to convert raw piano audio into readable sheet music using a modular, reproducible system. This version prioritizes correctness, modularity, and interpretability, establishing a strong foundation for higher-level musical reasoning and annotation in version 2. 
 
+To activate virtual environment: `source venv/bin/activate`
+
 ## High-Level Pipeline
