@@ -44,3 +44,38 @@ STANDARD_DURATIONS_BEATS = [
     (0.25, "sixteenth"),
     (0.125, "thirty_second"),
 ]
+
+
+@dataclass
+class QuantizedNote:
+    """
+    A note with musical timing in beats instead of raw seconds.
+    Velocity can range from 0 to 127. 
+    """
+    pitch: int
+    measure: int
+    beat: float
+    duration_beats: float
+    velocity: int
+
+    onset_sec: float
+    duration_sec: float
+
+    @property
+    def pitch_name(self) -> str:
+        return midi_to_note_name(self.pitch)
+
+    @property
+    def duration_name(self) -> str:
+        """Get approximate note value name."""
+        for dur, name in STANDARD_DURATIONS_BEATS:
+            if abs(self.duration_beats - dur) < 0.1:
+                return name
+        return f"{self.duration_beats:.2f}_beats"
+
+    def __repr__(self) -> str:
+        return (
+            f"QuantizedNote({self.pitch_name}, "
+            f"m{self.measure} b{self.beat:.2f}, "
+            f"dur={self.duration_name})"
+        )
