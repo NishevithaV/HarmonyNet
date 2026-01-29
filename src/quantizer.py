@@ -57,7 +57,6 @@ class QuantizedNote:
     beat: float
     duration_beats: float
     velocity: int
-
     onset_sec: float
     duration_sec: float
 
@@ -79,3 +78,61 @@ class QuantizedNote:
             f"m{self.measure} b{self.beat:.2f}, "
             f"dur={self.duration_name})"
         )
+
+
+@dataclass
+class QuantizationConfig:
+    """Configuration for the quantization process."""
+    tempo_bpm: float = 120.0
+    time_signature: tuple = (4, 4) # beats per measure, beat note value quarter-note 
+    grid_resolution: int = 16
+
+    @property
+    def beat_duration_sec(self) -> float:
+        return 60.0 / self.tempo_bpm
+
+    @property
+    def measure_duration_sec(self) -> float:
+        beats_per_measure = self.time_signature[0]
+        return beats_per_measure * self.beat_duration_sec
+
+    @property
+    def grid_duration_sec(self) -> float:
+        subdivisions_per_beat = self.grid_resolution / 4
+        return self.beat_duration_sec / subdivisions_per_beat
+
+
+@dataclass
+class QuantizedScore:
+    """Complete quantized score ready for notation encoding."""
+    notes: List[QuantizedNote]
+    config: QuantizationConfig
+    duration_sec: float
+    num_measures: int
+    original_num_notes: int = 0
+
+    def get_notes_in_measure(self, measure: int) -> List[QuantizedNote]:
+        return [n for n in self.notes if n.measure == measure]
+
+    def __repr__(self) -> str:
+        return (
+            f"QuantizedScore({len(self.notes)} notes, "
+            f"{self.num_measures} measures @ {self.config.tempo_bpm} BPM)"
+        )
+
+
+class Quantizer:
+    """
+    Converts raw note events to quantized musical notation.
+    Define time grid based on tempo and resolution, snap each not eonset to nearest grid point, each note duration to nearest standard value, assign measure and beat numbers. 
+    """
+
+    def __init__(self, config: Optional[QuantizationConfig] = None):
+        self.config = config or QuantizationConfig()
+
+    def quantize(self, transcription: TranscriptionResult) -> QuantizedScore:
+        quantized_notes = []
+
+        for note in transcription.notes:
+            q_note = self._quantize_note(note)
+            quantized_notes.append(q_note)
