@@ -136,3 +136,80 @@ class Quantizer:
         for note in transcription.notes:
             q_note = self._quantize_note(note)
             quantized_notes.append(q_note)
+
+        if quantized_notes:
+            num_measures = max(n.measure for n in quantized_notes)
+        else:
+            num_measures = int(np.ceil(
+                transcription.duration_sec / self.config.measure_duration_sec
+            ))
+
+        return QuantizedScore(
+            notes=quantized_notes,
+            config=self.config,
+            duration_sec=transcription.duration_sec,
+            num_measures=num_measures,
+            original_num_notes=len(transcription.notes),
+        )
+
+    def _quantize_note(self, note: NoteEvent) -> QuantizedNote:
+        quantized_onset_sec = self._snap_to_grid(note.onset_sec)
+        measure, beat = self._seconds_to_measure_beat(quantized_onset_sec)
+        duration_beats = self._quantize_duration(note.duration_sec)
+
+        return QuantizedNote(
+            pitch=note.pitch,
+            measure=measure,
+            beat=beat,
+            duration_beats=duration_beats,
+            velocity=note.velocity,
+            onset_sec=note.onset_sec,
+            duration_sec=note.duration_sec,
+        )
+
+    def _snap_to_grid(self, time_sec: float) -> float:
+        grid_sec = self.config.grid_duration_sec
+        grid_index = round(time_sec / grid_sec)
+        return grid_index * grid_sec
+
+    def _seconds_to_measure_beat(self, time_sec: float) -> tuple:
+        beat_dur = self.config.beat_duration_sec
+        beats_per_measure = self.config.time_signature[0]
+
+        total_beats = time_sec / beat_dur
+        measure = int(total_beats // beats_per_measure) + 1
+        beat_in_measure = (total_beats % beats_per_measure) + 1
+
+        return measure, beat_in_measure
+
+    def _quantize_duration(self, duration_sec: float) -> float:
+        beat_dur = self.config.beat_duration_sec
+        duration_beats = duration_sec / beat_dur
+
+        best_match = 0.25
+        best_diff = float('inf') 
+
+# can be made more efficient with bisect later
+        for std_dur, _ in STANDARD_DURATIONS_BEATS:
+            diff = abs(duration_beats - std_dur)
+            if diff < best_diff:
+                best_diff = diff
+                best_match = std_dur
+
+        return best_match
+
+
+def quantize_transcription(
+    transcription: TranscriptionResult,
+    tempo_bpm: float = 120.0,
+    time_signature: tuple = (4, 4),
+    grid_resolution: int = 16,
+) -> QuantizedScore:
+    """Convenience function for one-shot quantization."""
+    config = QuantizationConfig(
+        tempo_bpm=tempo_bpm,
+        time_signature=time_signature,
+        grid_resolution=grid_resolution,
+    )
+    quantizer = Quantizer(config)
+    return quantizer.quantize(transcription)
