@@ -23,9 +23,9 @@ MuseScore is a free, open-source notation program used in HarmoneyNet that can b
 1. Install MuseScore 4 at : https://musescore.org/en/download
 2. Ensure 'mscore' is in PATH, or configure the path below
 
-macOS: /Applications/MuseScore 4.app/Contents/MacOS/mscore
-Linux: /usr/bin/mscore or /usr/local/bin/mscore4
-Windows: C:\\Program Files\\MuseScore 4\\bin\\MuseScore4.exe
+macOS: `/Applications/MuseScore 4.app/Contents/MacOS/mscore`
+Linux: `/usr/bin/mscore or /usr/local/bin/mscore4`
+Windows: `C:\\Program Files\\MuseScore 4\\bin\\MuseScore4.exe`
 
 MuseScore CLI usage:
     mscore input.musicxml -o output.pdf
@@ -36,5 +36,9 @@ The -o flag determines output format based on extension:
     .svg  → SVG vector
     .mid  → MIDI
     .mp3  → Audio (if soundfont configured)
+
+To run v1 via command-line: 
+    With output pdf containing transcribed notes: `python -m src.cli transcribe input.mp3 -o output.pdf`
+    Without output pdf (to use MusicXML for editing): `python -m src.cli transcribe input.mp3 --tempo 100 --no-pdf`
 
 ## High-Level Pipeline
