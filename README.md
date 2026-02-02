@@ -79,6 +79,6 @@ MuseScore.
 
 ### High-Level Pipeline
 
-![HarmonyNet pipeline](assets/pipeline_1.png)
+![HarmonyNet pipeline](assets/pipeline_v1.png)
 
 ## Version 2 - Upcoming 
