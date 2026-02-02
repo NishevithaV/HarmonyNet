@@ -49,7 +49,6 @@ data/outputs/*
 *.musicxml
 *.xml
 *.pdf
-*.png
 
 # --------------------
 # ML / Models 
