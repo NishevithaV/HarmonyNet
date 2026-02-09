@@ -25,22 +25,40 @@ Shape: [time_frames, 264 frequency_bins, num_harmonics]
 - frame_threshold: If P(note) > threshold, note is active
 
 Default values (0.5, 0.3) are tuned for general piano transcription.
+
+NOTE on basic-pitch 0.3.0 API:
+- predict() takes audio_path (file path) instead of numpy arrays
+- minimum_note_length is in milliseconds (default 127.7ms)
+- ICASSP_2022_MODEL_PATH points to TF saved model; we use .onnx suffix
+  for the ONNX backend which works on Python 3.12 + macOS
 """
 
 from typing import List, Optional, Tuple
 from pathlib import Path
 import numpy as np
 
+# Compatibility changes: scipy.signal.gaussian was moved to scipy.signal.windows.gaussian
+# in scipy 1.14+. basic-pitch 0.3.0 references the old location.
+import scipy.signal
+if not hasattr(scipy.signal, 'gaussian'):
+    from scipy.signal.windows import gaussian
+    scipy.signal.gaussian = gaussian
+
 from basic_pitch.inference import predict, Model
 from basic_pitch import ICASSP_2022_MODEL_PATH
 
-from .audio_loader import AudioData, load_audio, MODEL_SAMPLE_RATE
+from .audio_loader import load_audio
 from .note_events import NoteEvent, TranscriptionResult, PIANO_MIN_MIDI, PIANO_MAX_MIDI
 
 
 DEFAULT_ONSET_THRESHOLD = 0.5
 DEFAULT_FRAME_THRESHOLD = 0.3
-DEFAULT_MIN_NOTE_LENGTH = 0.05  
+DEFAULT_MIN_NOTE_LENGTH = 0.05  # seconds (converted to ms for basic-pitch)
+
+# Resolve ONNX model path from ICASSP_2022_MODEL_PATH
+# ICASSP_2022_MODEL_PATH points to .../nmp (TF saved model)
+# We need .../nmp.onnx for the ONNX runtime backend
+ONNX_MODEL_PATH = Path(str(ICASSP_2022_MODEL_PATH) + '.onnx')
 
 
 class PianoTranscriber:
@@ -60,17 +78,15 @@ class PianoTranscriber:
 
         # Lazy model loading 
         self._model: Optional[Model] = None
-        
 
     @property
     def model(self) -> Model:
         """
         Lazy-load the model on first access.
-        TensorFlow Lite model wrapped by basic-pitch.
+        Uses ONNX backend for Python 3.12 compatibility on macOS.
         """
         if self._model is None:
-            # points to the pre-trained weights
-            self._model = Model(ICASSP_2022_MODEL_PATH)
+            self._model = Model(ONNX_MODEL_PATH)
         return self._model
 
     def transcribe(
@@ -78,13 +94,17 @@ class PianoTranscriber:
         audio_path: str | Path,
     ) -> TranscriptionResult:
         """
-        Transcribe an audio file to note events. This is the main entry point and runs the full pipeline:
+        Transcribe an audio file to note events. This is the main entry point and runs the full pipeline.
+        basic-pitch 0.3.0 handles audio loading internally, so we pass the file path directly.
+        We still load audio separately to get metadata (duration, sample rate).
         """
-        # Step 1: Load audio
+        audio_path = Path(audio_path)
+
+        # Step 1: Load audio for metadata (duration, sample rate)
         audio_data = load_audio(audio_path)
 
-        # Step 2: Run inference
-        notes = self._run_inference(audio_data)
+        # Step 2: Run inference (basic-pitch loads audio internally from file path)
+        notes = self._run_inference(audio_path)
 
         # Step 3: Package results
         return TranscriptionResult(
@@ -96,68 +116,39 @@ class PianoTranscriber:
             min_note_length_sec=self.min_note_length,
         )
 
-    def transcribe_from_array(
-        self,
-        samples: np.ndarray,
-        sample_rate: int = MODEL_SAMPLE_RATE,
-    ) -> TranscriptionResult:
+    def _run_inference(self, audio_path: Path) -> List[NoteEvent]:
         """
-        Transcribe from a numpy array. Useful for testing and streaming.
+        Run the inference pipeline.
+        basic_pitch.inference.predict() takes a file path, computes Harmonic CQT
+        spectrogram, batches it, runs CNN forward pass on each batch, stitches
+        predictions, applies thresholding and note extraction.
+        Returns note_events as (start, end, pitch, velocity, pitch_bends) tuples.
         """
-        if sample_rate != MODEL_SAMPLE_RATE: # since model is trained on audio at 22,050 Hz
-            raise ValueError(
-                f"Sample rate must be {MODEL_SAMPLE_RATE}, got {sample_rate}. "
-                "Resample before calling this method."
-            )
+        # Convert min_note_length from seconds to milliseconds for basic-pitch API
+        min_note_ms = self.min_note_length * 1000
 
-        notes = self._run_inference_on_array(samples)
-        duration_sec = len(samples) / sample_rate
-
-        return TranscriptionResult(
-            notes=notes,
-            duration_sec=duration_sec,
-            sample_rate=sample_rate,
-            onset_threshold=self.onset_threshold,
-            frame_threshold=self.frame_threshold,
-            min_note_length_sec=self.min_note_length,
-        )
-
-    def _run_inference(self, audio_data: AudioData) -> List[NoteEvent]:
-        """
-        Run the inference pipeline on loaded audio.
-        basic_pitch.inference.predict() computes Harmonic CQT spectrogram, bacthes it, runs CNN forward pass on each batch, stitches predictions, applies thresholding and note extraction.
-        note_events in the format: 
-        (onset_time, end_time, pitch, velocity, confidence) tuples.
-        """
-        return self._run_inference_on_array(audio_data.samples)
-
-    def _run_inference_on_array(self, samples: np.ndarray) -> List[NoteEvent]:
-        """
-        Calls basic-pitch's predict() function which returns a model_output. 
-        Model_output is raw probability matrices (onset, note, contour)
-        Converts note_events to NoteEvent format.
-        """
-        # predict() handles CQT, batching, inference, postprocessing
-        model_output, midi_data, note_events = predict(
-            audio_path_or_array=samples,
+        _, _, note_events = predict(
+            audio_path=audio_path,
             model_or_model_path=self.model,
             onset_threshold=self.onset_threshold,
             frame_threshold=self.frame_threshold,
-            minimum_note_length=self.min_note_length,
-            # These parameters control pitch bend detection (not needed for piano)
-            melodia_trick=True,  # Helps with note tracking
-            minimum_frequency=None,  # Use default (piano range)
+            minimum_note_length=min_note_ms,
+            melodia_trick=True,
+            minimum_frequency=None,
             maximum_frequency=None,
         )
 
         # Convert to NoteEvent format
+        # basic-pitch 0.3.0 note_events: (start_sec, end_sec, pitch, velocity, pitch_bends)
         notes = []
-        for start_sec, end_sec, pitch, velocity, confidence in note_events:
+        for event in note_events:
+            start_sec, end_sec, pitch, velocity = event[0], event[1], event[2], event[3]
+
             # Filter to piano range
             if not (PIANO_MIN_MIDI <= pitch <= PIANO_MAX_MIDI):
                 continue
 
-            # Velocity from basic-pitch 0-1 scale to 0-127
+            # Velocity from basic-pitch is 0-1, scale to 0-127
             velocity_midi = int(np.clip(velocity * 127, 0, 127))
 
             duration = end_sec - start_sec
@@ -180,17 +171,17 @@ class PianoTranscriber:
         """
         Get raw model output matrices for debugging and visualization.
         """
-        audio_data = load_audio(audio_path)
+        audio_path = Path(audio_path)
+        min_note_ms = self.min_note_length * 1000
 
         model_output, _, _ = predict(
-            audio_path_or_array=audio_data.samples,
+            audio_path=audio_path,
             model_or_model_path=self.model,
             onset_threshold=self.onset_threshold,
             frame_threshold=self.frame_threshold,
-            minimum_note_length=self.min_note_length,
+            minimum_note_length=min_note_ms,
         )
 
-        # model_output is a dict with keys as below
         return (
             model_output['onset'],
             model_output['note'],
