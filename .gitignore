@@ -34,9 +34,11 @@ env/
 # --------------------
 data/processed/*
 data/outputs/*
+data/maestro/*
 
 !data/processed/.gitkeep
 !data/outputs/.gitkeep
+!data/maestro/.gitkeep
 
 # --------------------
 # Audio / Music artifacts

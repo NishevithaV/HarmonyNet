@@ -45,10 +45,10 @@ pip install -r requirements.txt
 
 Install MuseScore 4 from: https://musescore.org/en/download
 
-Default locations:
-macOS:  `/Applications/MuseScore 4.app/Contents/MacOS/mscore` 
-Linux:  `/usr/bin/mscore` or `/usr/local/bin/mscore4` 
-Windows: `C:\Program Files\MuseScore 4\bin\MuseScore4.exe`
+**Default locations:** <br/>
+macOS:  `/Applications/MuseScore 4.app/Contents/MacOS/mscore` <br/>
+Linux:  `/usr/bin/mscore` or `/usr/local/bin/mscore4` <br/>
+Windows: `C:\Program Files\MuseScore 4\bin\MuseScore4.exe` <br/>
 
 If MuseScore is not installed, the pipeline still produces MusicXML output that can be opened in any notation software.
 
