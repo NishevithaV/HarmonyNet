@@ -1,0 +1,93 @@
+@startuml pipeline_v1
+skinparam backgroundColor #FEFEFE
+skinparam shadowing false
+skinparam defaultFontName "Helvetica"
+skinparam defaultFontSize 13
+
+skinparam activity {
+    BackgroundColor #E8F4FD
+    BorderColor #3B82F6
+    FontColor #1E293B
+    ArrowColor #64748B
+    DiamondBackgroundColor #FEF3C7
+    DiamondBorderColor #F59E0B
+}
+
+title **HarmonyNet V1 Pipeline**
+
+start
+
+:User provides audio file
+(MP3 / WAV / FLAC);
+
+partition "**1. Audio Loading**\n//src/audio_loader.py//" #F0F9FF {
+    :Load audio via librosa;
+    :Resample to 22050 Hz (mono);
+    :Peak-normalize to [-1, 1];
+    note right
+        AudioData {
+            samples, sample_rate,
+            duration_sec
+        }
+    end note
+}
+
+partition "**2. ML Inference**\n//src/inference.py//" #F0FDF4 {
+    :Load ONNX model
+    (basic-pitch ICASSP 2022);
+    :CNN forward pass (batched);
+    :3 probability matrices:
+    **onset** / **note** / **contour**
+    (each 88 keys x time_frames);
+    :Filter to piano range
+    MIDI 21 (A0) - 108 (C8);
+    note right
+        List[NoteEvent] {
+            pitch, onset_sec,
+            duration_sec, velocity
+        }
+    end note
+}
+
+partition "**3. Quantization**\n//src/quantizer.py//" #FFFBEB {
+    :Build time grid and snap onsets to nearest 
+    grid point;
+    :Match durations to standard
+    note values (whole ... 32nd);
+    :Assign measure + beat numbers;
+    note right
+        QuantizedScore {
+            List[QuantizedNote],
+            measures, tempo, time_sig
+        }
+    end note
+}
+
+partition "**4. MusicXML Encoding**\n//src/encoder.py//" #FDF2F8 {
+    :Create music21 Score 
+    and add metadata;
+    :Build measures with notes,
+    durations, velocities, labels;
+    :Write .musicxml file;
+}
+
+if (MuseScore available?) then (yes)
+    partition "**5. PDF Rendering**\n//src/renderer.py//" #F5F3FF {
+        :MuseScore CLI renders
+        MusicXML to PDF;
+        :Output .pdf file;
+    }
+else (no)
+    :Output .musicxml only;
+    note right
+        Can be opened in
+        MuseScore, Finale,
+        or any notation app
+    end note
+endif
+
+:Sheet music output;
+
+stop
+
+@enduml
