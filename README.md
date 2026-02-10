@@ -15,15 +15,6 @@ raw audio in, sheet music out.
 
 ![HarmonyNet pipeline](assets/pipeline_v1.png)
 
-**Audio** &rarr; **ML Inference** &rarr; **Quantization** &rarr; **MusicXML Encoding** &rarr; **PDF Rendering**
-
- Audio Loading (`src/audio_loader.py`):  Load MP3/WAV/FLAC, resample to 22050 Hz mono, peak-normalize 
-ML Inference (`src/inference.py`): basic-pitch CNN (ONNX backend) &rarr; onset, note, contour probability matrices &rarr; note events 
-Quantization (`src/quantizer.py`): Snap continuous time to musical grid (16th-note resolution), assign measures and beats 
-Encoding (`src/encoder.py`): Convert quantized notes to MusicXML via music21 
-Rendering (`src/renderer.py`): MusicXML &rarr; PDF via MuseScore CLI 
-CLI (`src/cli.py`): Click-based interface tying it all together 
-
 ### What V1 does well
 - Accurate pitch detection across the full 88-key piano range (MIDI 21-108)
 - Correct onset timing and note durations
@@ -90,33 +81,13 @@ python -m src.cli check
 
 ### CLI Options
 
- `--tempo`:  120, Tempo in BPM 
- `--time-sig`: 4/4, Time signature 
- `--onset-threshold`: 0.5, Onset detection sensitivity (0-1) 
- `--frame-threshold`: 0.3, Note frame sensitivity (0-1) 
- `--title`: filename, Score title 
- `--no-pdf`: false, Output MusicXML only 
- `--keep-musicxml`: false, Keep MusicXML alongside PDF 
-
-## Project Structure
-
-```
-HarmonyNet/
-  src/
-    note_events.py    # Core data structures (NoteEvent, TranscriptionResult)
-    audio_loader.py   # Audio loading and preprocessing
-    inference.py      # ML inference (basic-pitch + ONNX)
-    quantizer.py      # Musical grid quantization
-    encoder.py        # MusicXML generation (music21)
-    renderer.py       # PDF rendering (MuseScore CLI)
-    cli.py            # Command-line interface
-  data/
-    inputs/           # Audio files
-    outputs/          # Generated sheet music
-  docs/               # Technical notes
-  assets/             # Pipeline diagrams
-  tests/
-```
+ `--tempo`:  120, Tempo in BPM <br/>
+ `--time-sig`: 4/4, Time signature <br/>
+ `--onset-threshold`: 0.5, Onset detection sensitivity (0-1) <br/>
+ `--frame-threshold`: 0.3, Note frame sensitivity (0-1) <br/>
+ `--title`: filename, Score title <br/>
+ `--no-pdf`: false, Output MusicXML only <br/>
+ `--keep-musicxml`: false, Keep MusicXML alongside PDF <br/>
 
 ## Technical Notes
 
