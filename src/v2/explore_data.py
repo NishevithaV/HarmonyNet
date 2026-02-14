@@ -65,3 +65,45 @@ def dataset_overview(metadata: list[dict]):
     print("  Top 10:")
     for composer, count in composers.most_common(10):
         print(f"    {composer}: {count} performances")
+
+
+def analyze_midi_file(midi_path: Path) -> dict:
+    """
+    Extract statistical properties from a single MIDI file.
+
+    pretty_midi parses a MIDI file into a list of Instrument objects
+    Each instrument has notes as Note objects with start, end, pitch, velocity
+
+    For MAESTRO piano recordings, there's typically 1 instrument. Returns dict 
+    with statistics for this file.
+    """
+    pm = pretty_midi.PrettyMIDI(str(midi_path))
+
+    # Collect all notes across all instruments
+    all_notes = []
+    for inst in pm.instruments:
+        all_notes.extend(inst.notes)
+
+    if not all_notes:
+        return None
+
+    # Sort by onset time
+    all_notes.sort(key=lambda n: n.start)
+
+    pitches = [n.pitch for n in all_notes]
+    velocities = [n.velocity for n in all_notes]
+    durations = [n.end - n.start for n in all_notes]
+
+    # Inter-onset intervals (time between consecutive note starts) for note density and tempo 
+    onsets = [n.start for n in all_notes]
+    iois = [onsets[i+1] - onsets[i] for i in range(len(onsets)-1)]
+
+    return {
+        'num_notes': len(all_notes),
+        'pitches': pitches,
+        'velocities': velocities,
+        'durations': durations,
+        'iois': iois,
+        'total_duration': all_notes[-1].end,
+    }
+
