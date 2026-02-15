@@ -107,3 +107,195 @@ def analyze_midi_file(midi_path: Path) -> dict:
         'total_duration': all_notes[-1].end,
     }
 
+
+def analyze_dataset_sample(metadata: list[dict], max_files: int = 50):
+    """
+    Analyze a representative sample of MIDI files from the training set.
+    """
+    print("\n" + "=" * 60)
+    print(f"MIDI ANALYSIS (sampling {max_files} training files)")
+    print("=" * 60)
+
+    train_rows = [r for r in metadata if r['split'] == 'train']
+
+    # Take evenly spaced sample for diversity
+    step = max(1, len(train_rows) // max_files)
+    sample = train_rows[::step][:max_files]
+
+    all_pitches = []
+    all_velocities = []
+    all_durations = []
+    all_iois = []
+    all_note_counts = []
+
+    for i, row in enumerate(sample):
+        midi_path = MAESTRO_DIR / row['midi_filename']
+        if not midi_path.exists():
+            continue
+
+        stats = analyze_midi_file(midi_path)
+        if stats is None:
+            continue
+
+        all_pitches.extend(stats['pitches'])
+        all_velocities.extend(stats['velocities'])
+        all_durations.extend(stats['durations'])
+        all_iois.extend(stats['iois'])
+        all_note_counts.append(stats['num_notes'])
+
+        if (i + 1) % 10 == 0:
+            print(f"  Analyzed {i+1}/{len(sample)} files...")
+
+    print(f"\n  Total notes analyzed: {len(all_pitches):,}")
+
+    # pitch analysis
+    print("\n*** PITCH DISTRIBUTION of piano range in performances ***")
+    pitches = np.array(all_pitches)
+    print(f"  Range: {pitches.min()} ({_midi_name(pitches.min())}) "
+          f"to {pitches.max()} ({_midi_name(pitches.max())})")
+    print(f"  Mean: {pitches.mean():.0f} ({_midi_name(int(pitches.mean()))})")
+
+    # Percentiles show where most notes actually fall
+    p5 = int(np.percentile(pitches, 5))
+    p95 = int(np.percentile(pitches, 95))
+    print(f"  5th-95th percentile: {p5} ({_midi_name(p5)}) "
+          f"to {p95} ({_midi_name(p95)})")
+    print(f"  → 90% of notes fall in a {p95-p5} semitone range")
+
+    # velocity analysis
+    print("\n*** VELOCITY DISTRIBUTION ***")
+    print("  (This tells us how many velocity bins we need in our tokenizer)")
+    vels = np.array(all_velocities)
+    print(f"  Range: {vels.min()} to {vels.max()}")
+    print(f"  Mean: {vels.mean():.0f}, Std: {vels.std():.0f}")
+
+    # check if velocity is roughly uniform or clustered
+    vel_bins = [0, 32, 64, 96, 128]
+    vel_labels = ['pp (0-31)', 'p-mp (32-63)', 'mf-f (64-95)', 'ff (96-127)']
+    vel_hist, _ = np.histogram(vels, bins=vel_bins)
+    print(f"  Distribution across dynamics:")
+    for label, count in zip(vel_labels, vel_hist):
+        pct = count / len(vels) * 100
+        bar = '#' * int(pct / 2)
+        print(f"    {label:>15s}: {pct:5.1f}% {bar}")
+
+    # duration analysis
+    print("\n*** NOTE DURATION DISTRIBUTION ***")
+    print("  (This tells us the time resolution our tokenizer needs)")
+    durs = np.array(all_durations)
+    print(f"  Range: {durs.min():.4f}s to {durs.max():.2f}s")
+    print(f"  Mean: {durs.mean():.3f}s, Median: {np.median(durs):.3f}s")
+
+    # duration buckets in seconds 
+    dur_thresholds = [0, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, float('inf')]
+    dur_labels = ['<50ms', '50-100ms', '100-250ms', '250-500ms',
+                  '0.5-1s', '1-2s', '>2s']
+    dur_hist, _ = np.histogram(durs, bins=dur_thresholds)
+    print(f"  Duration buckets:")
+    for label, count in zip(dur_labels, dur_hist):
+        pct = count / len(durs) * 100
+        bar = '#' * int(pct / 2)
+        print(f"    {label:>12s}: {pct:5.1f}% {bar}")
+
+    # inter-onset intervals (IOIs) analysis
+    print("\n*** INTER-ONSET INTERVALS ***")
+    print("  (Time between consecutive note starts: affects TIME_SHIFT granularity)")
+    iois = np.array(all_iois)
+    # Filter out zero IOIs (simultaneous notes in chords)
+    nonzero_iois = iois[iois > 0.001]
+    print(f"  Simultaneous notes (chords): {(iois <= 0.001).sum() / len(iois) * 100:.1f}%")
+    print(f"  Non-zero IOI median: {np.median(nonzero_iois):.4f}s")
+    print(f"  Non-zero IOI mean: {np.mean(nonzero_iois):.4f}s")
+
+    p5_ioi = np.percentile(nonzero_iois, 5)
+    p95_ioi = np.percentile(nonzero_iois, 95)
+    print(f"  5th-95th percentile: {p5_ioi:.4f}s to {p95_ioi:.4f}s")
+
+    # notes per piece
+    print("\n*** NOTES PER PIECE ***")
+    print("  (This determines output sequence length for the model)")
+    nc = np.array(all_note_counts)
+    print(f"  Range: {nc.min()} to {nc.max()}")
+    print(f"  Mean: {nc.mean():.0f}, Median: {np.median(nc):.0f}")
+
+    # summar for tokenizer design 
+    print("\n" + "=" * 60)
+    print("IMPLICATIONS FOR TOKENIZER DESIGN")
+    print("=" * 60)
+    print(f"""
+""")
+
+
+def _midi_name(midi_pitch: int) -> str:
+    """Convert MIDI pitch to note name."""
+    names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+    octave = (midi_pitch // 12) - 1
+    note = names[midi_pitch % 12]
+    return f"{note}{octave}"
+
+
+def inspect_single_midi(metadata: list[dict]):
+    """
+    Look at the raw content of one MIDI file in detail to show what the model will have to learn to predict. 
+    """
+    print("\n" + "=" * 60)
+    print("Single MIDI File Inspection")
+    print("=" * 60)
+
+    # Well-known piece for demonstration
+    row = metadata[0]  # First training file
+    midi_path = MAESTRO_DIR / row['midi_filename']
+
+    print(f"\n  File: {row['midi_filename']}")
+    print(f"  Composer: {row['canonical_composer']}")
+    print(f"  Title: {row['canonical_title']}")
+    print(f"  Duration: {float(row['duration']):.0f}s")
+
+    pm = pretty_midi.PrettyMIDI(str(midi_path))
+
+    print(f"\n  Instruments: {len(pm.instruments)}")
+    for i, inst in enumerate(pm.instruments):
+        print(f"    [{i}] program={inst.program}, "
+              f"is_drum={inst.is_drum}, "
+              f"notes={len(inst.notes)}")
+
+    # Show first 20 notes used as ground truth by model 
+    notes = pm.instruments[0].notes
+    notes.sort(key=lambda n: n.start)
+
+    print(f"\n  First 20 notes (what the model must learn to output):")
+    print(f"  {'Start':>8s} {'End':>8s} {'Dur':>7s} {'Pitch':>5s} {'Note':>5s} {'Vel':>4s}")
+    print(f"  {'-'*8} {'-'*8} {'-'*7} {'-'*5} {'-'*5} {'-'*4}")
+    for n in notes[:20]:
+        dur = n.end - n.start
+        name = _midi_name(n.pitch)
+        print(f"  {n.start:8.3f} {n.end:8.3f} {dur:7.3f} {n.pitch:5d} {name:>5s} {n.velocity:4d}")
+
+    # Show what chords look like 
+    print(f"\n  Chord detection (notes starting within 30ms of each other):")
+    chord_threshold = 0.030  # 30ms
+    i = 0
+    chord_count = 0
+    # If groups of 2+ notes start within 30ms, we consider them a chord. Show first 5 chords in the piece. 
+    # Needed for tokenizater to learn to predict multiple simultaneous notes.
+    while i < len(notes) and chord_count < 5:
+        chord = [notes[i]]
+        j = i + 1
+        while j < len(notes) and notes[j].start - notes[i].start < chord_threshold:
+            chord.append(notes[j])
+            j += 1
+
+        if len(chord) > 1:
+            chord_count += 1
+            names = [_midi_name(n.pitch) for n in chord]
+            print(f"    t={chord[0].start:.3f}s: {', '.join(names)} "
+                  f"({len(chord)} notes)")
+
+        i = j
+
+
+if __name__ == '__main__':
+    metadata = load_metadata()
+    dataset_overview(metadata)
+    inspect_single_midi(metadata)
+    analyze_dataset_sample(metadata, max_files=50)
