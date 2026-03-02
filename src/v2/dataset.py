@@ -14,7 +14,7 @@ from .tokenizer import (
     encode_notes, MidiNote, BOS_TOKEN, EOS_TOKEN, PAD_TOKEN,
     PIANO_MIN, PIANO_MAX, VOCAB_SIZE,
 )
-from .spectrogram import MelSpectrogramExtractor, SpectrogramConfig
+from .spectrogram import WhisperSpectrogramExtractor, SpectrogramConfig, WHISPER_SAMPLE_RATE
 
 import pretty_midi
 
@@ -59,7 +59,7 @@ class PianoTranscriptionDataset(Dataset):
         self.spec_config = spec_config or SpectrogramConfig()
         self.audio_dir = audio_dir or MAESTRO_DIR
 
-        self.extractor = MelSpectrogramExtractor(self.spec_config)
+        self.extractor = WhisperSpectrogramExtractor()
         self.metadata = load_maestro_metadata(split)
 
         # Build segment index: list of (piece_idx, start_sec) tuples
@@ -120,54 +120,37 @@ class PianoTranscriptionDataset(Dataset):
         Extract spectrogram for a time segment.
 
         Steps:
-        1. Load full audio file (or use cache)
-        2. Slice to [start_sec, end_sec]
-        3. Compute mel spectrogram
-        4. Pad or truncate to exact frame count
+        1. Query native sample rate (torchaudio.info — no decode cost)
+        2. Load just the segment at native sample rate
+        3. Pass to WhisperSpectrogramExtractor, which handles:
+           - resampling to 16kHz
+           - mono conversion
+           - log-mel computation
+           - pad/truncate to exactly [1, 80, 3000]
 
-        For now, compute per-segment to keep memory usage 
-        low during development.
+        frame_offset and num_frames must use the file's native sample
+        rate, not Whisper's 16kHz, so we query it first.
         """
         audio_path = self.audio_dir / row['audio_filename']
 
-        # Calculate sample indices
-        start_sample = int(start_sec * self.spec_config.sample_rate)
-        num_samples = int(self.segment_sec * self.spec_config.sample_rate)
+        # Get native sample rate without decoding any audio frames
+        info = torchaudio.info(str(audio_path))
+        native_sr = info.sample_rate
 
-        # Load just this segment of audio
-        # torchaudio.load supports frame_offset and num_frames for efficient partial loading
+        # Compute frame indices in native sample rate
+        start_sample = int(start_sec * native_sr)
+        num_samples = int(self.segment_sec * native_sr)
+
+        # Load just this segment (efficient partial decode)
         waveform, sr = torchaudio.load(
             str(audio_path),
             frame_offset=start_sample,
             num_frames=num_samples,
         )
 
-        # Resample if needed
-        if sr != self.spec_config.sample_rate:
-            resampler = torchaudio.transforms.Resample(sr, self.spec_config.sample_rate)
-            waveform = resampler(waveform)
-
-        # Mono
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-
-        # Pad if segment is shorter than expected (end of piece)
-        if waveform.shape[1] < num_samples:
-            padding = num_samples - waveform.shape[1]
-            waveform = torch.nn.functional.pad(waveform, (0, padding))
-
-        # Compute spectrogram
-        spec = self.extractor.from_waveform(waveform)
-
-        # Ensure exact frame count
-        expected_frames = self.spec_config.num_frames(self.segment_sec)
-        if spec.shape[2] > expected_frames:
-            spec = spec[:, :, :expected_frames]
-        elif spec.shape[2] < expected_frames:
-            padding = expected_frames - spec.shape[2]
-            spec = torch.nn.functional.pad(spec, (0, padding))
-
-        return spec
+        # WhisperSpectrogramExtractor handles resampling to 16kHz,
+        # mono conversion, and padding/truncation to [1, 80, 3000]
+        return self.extractor.from_waveform(waveform, sr)
 
     def _get_token_segment(
         self, row: dict, start_sec: float, end_sec: float

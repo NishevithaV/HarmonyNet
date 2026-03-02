@@ -1,25 +1,20 @@
 """
 Convert audio to mel spectrogram tensors for model input
-Note: a mel scale compresses high frequencies and expands low ones, 
+Note: a mel scale compresses high frequencies and expands low ones,
 matching how we perceive pitch.
 
-PARAMETERS chosen based on EDA:
-- sample_rate: 22050 Hz (same as basic-pitch, covers piano range)
-- n_fft: 2048 (window size, ~93ms, good freq resolution for piano)
-- hop_length: 512 (step between windows, ~23ms, good time resolution)
-- n_mels: 256 (number of mel frequency bins)
-  Why 256? Piano spans ~7 octaves. 256 bins gives ~36 bins per octave,
-  enough to distinguish adjacent semitones even in the upper range.
-- fmin: 20 Hz (just below A0 = 27.5 Hz)
-- fmax: 8000 Hz (well above C8 = 4186 Hz, captures harmonics)
+TWO CONFIGS:
+- SpectrogramConfig: our original 256-mel config (used by V1 pipeline)
+- WhisperSpectrogramConfig: matches Whisper's exact preprocessing
 
-OUTPUT SHAPE:
-For a 10-second audio clip at 22050 Hz:
-- Raw samples: 220,500
-- After STFT with hop_length=512: 220500 / 512 ≈ 431 time frames
-- Shape: [1, 256, 431] (channels, mel_bins, time_frames)
+WHY TWO CONFIGS?
+Whisper was pre-trained with specific parameters (16kHz, 80 mels, hop=160,
+3000 frames for 30s). Using different parameters means the encoder receives
+inputs it has never seen during pre-training, which degrades SFT quality.
 
-This is what the model's encoder will process.
+For V2 SFT training, we use WhisperSpectrogramConfig to match Whisper's
+expected input format exactly. Whisper pads/truncates all input to 3000
+frames regardless of segment length.
 """
 
 import torch
@@ -36,8 +31,14 @@ N_MELS = 256
 F_MIN = 20.0
 F_MAX = 8000.0
 
-# Time resolution: HOP_LENGTH / SAMPLE_RATE = 512/22050 ≈ 0.0232 seconds per frame
 FRAME_DURATION_SEC = HOP_LENGTH / SAMPLE_RATE  # ~23.2ms
+
+# Whisper's exact parameters (must match what the encoder was pre-trained on)
+WHISPER_SAMPLE_RATE = 16000
+WHISPER_N_FFT = 400
+WHISPER_HOP_LENGTH = 160
+WHISPER_N_MELS = 80
+WHISPER_NUM_FRAMES = 3000  # 30 seconds × 100 frames/sec
 
 
 @dataclass
@@ -140,7 +141,69 @@ class MelSpectrogramExtractor:
         return frames * self.config.frame_duration_sec
 
 
+class WhisperSpectrogramExtractor:
+    """
+    Produces log-mel spectrograms in Whisper's exact expected format.
+
+    Whisper requires:
+    - sample_rate: 16000 Hz
+    - n_mels: 80
+    - hop_length: 160 (→ 100 frames per second)
+    - n_fft: 400
+    - length: exactly 3000 frames (pad/truncate to 30 seconds)
+
+    This extractor enforces all of these constraints so the Whisper
+    encoder receives input in the same format it was pre-trained on.
+    The output shape is always [1, 80, 3000] regardless of segment length.
+    """
+
+    def __init__(self):
+        self._transform = torchaudio.transforms.MelSpectrogram(
+            sample_rate=WHISPER_SAMPLE_RATE,
+            n_fft=WHISPER_N_FFT,
+            hop_length=WHISPER_HOP_LENGTH,
+            n_mels=WHISPER_N_MELS,
+            power=2.0,
+        )
+
+    def from_waveform(self, waveform: torch.Tensor, orig_sr: int) -> torch.Tensor:
+        """
+        Compute Whisper-format log-mel from a waveform.
+
+        Args:
+            waveform: [1, num_samples] or [num_samples]
+            orig_sr: Original sample rate of waveform
+
+        Returns:
+            [1, 80, 3000] log-mel spectrogram
+        """
+        if waveform.dim() == 1:
+            waveform = waveform.unsqueeze(0)
+
+        # Resample to 16000 Hz
+        if orig_sr != WHISPER_SAMPLE_RATE:
+            resampler = torchaudio.transforms.Resample(orig_sr, WHISPER_SAMPLE_RATE)
+            waveform = resampler(waveform)
+
+        # Mono
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+
+        # Compute mel spectrogram
+        mel = self._transform(waveform)  # [1, 80, T]
+        log_mel = torch.log(mel + 1e-9)
+
+        # Pad or truncate to exactly WHISPER_NUM_FRAMES (3000)
+        T = log_mel.shape[2]
+        if T < WHISPER_NUM_FRAMES:
+            log_mel = torch.nn.functional.pad(log_mel, (0, WHISPER_NUM_FRAMES - T))
+        else:
+            log_mel = log_mel[:, :, :WHISPER_NUM_FRAMES]
+
+        return log_mel  # [1, 80, 3000]
+
+
 def extract_spectrogram(audio_path: str | Path) -> torch.Tensor:
-    """Convenience function for one-shot extraction."""
+    """Convenience function for one-shot extraction (V1 pipeline)."""
     extractor = MelSpectrogramExtractor()
     return extractor.from_file(audio_path)
