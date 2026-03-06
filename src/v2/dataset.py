@@ -6,8 +6,8 @@ This module produces (spectrogram_chunk, token_sequence) pairs from MAESTRO.
 import csv
 from pathlib import Path
 from typing import List, Optional
+import soundfile as sf
 import torch
-import torchaudio
 from torch.utils.data import Dataset, DataLoader
 
 from .tokenizer import (
@@ -73,17 +73,27 @@ class PianoTranscriptionDataset(Dataset):
         """
         Compute all (piece_idx, start_sec) pairs.
 
-        We skip the last segment if it would be shorter than half
-        the segment duration to avoid very short segments.
+        Only includes pieces whose audio file exists on disk — this
+        allows training on a partial download of MAESTRO without errors.
+        Skips the last segment if it would be shorter than half the
+        segment duration to avoid very short tail segments.
         """
         segments = []
+        skipped = 0
         for i, row in enumerate(self.metadata):
+            audio_path = self.audio_dir / row['audio_filename']
+            if not audio_path.exists():
+                skipped += 1
+                continue
             duration = float(row['duration'])
             start = 0.0
             while start + self.segment_sec * 0.5 < duration:
                 segments.append((i, start))
                 start += self.segment_sec
 
+        if skipped:
+            print(f"  [dataset] {len(self.metadata) - skipped} pieces loaded, "
+                  f"{skipped} skipped (audio not on disk)")
         return segments
 
     # returns total number of segments across all pieces
@@ -120,33 +130,40 @@ class PianoTranscriptionDataset(Dataset):
         Extract spectrogram for a time segment.
 
         Steps:
-        1. Query native sample rate (torchaudio.info — no decode cost)
-        2. Load just the segment at native sample rate
+        1. Query native sample rate (header-only, no decode)
+        2. Load just the segment using soundfile (supports start/stop seek)
         3. Pass to WhisperSpectrogramExtractor, which handles:
            - resampling to 16kHz
            - mono conversion
            - log-mel computation
            - pad/truncate to exactly [1, 80, 3000]
 
-        frame_offset and num_frames must use the file's native sample
-        rate, not Whisper's 16kHz, so we query it first.
+        We use soundfile directly instead of torchaudio.load because
+        torchaudio 2.10 defaults to the torchcodec backend which requires
+        a separate install. soundfile handles WAV natively with no extras.
         """
         audio_path = self.audio_dir / row['audio_filename']
 
-        # Get native sample rate without decoding any audio frames
-        info = torchaudio.info(str(audio_path))
-        native_sr = info.sample_rate
+        # Header-only read: get sample rate without decoding any frames.
+        info = sf.info(str(audio_path))
+        native_sr = info.samplerate
 
-        # Compute frame indices in native sample rate
+        # Compute sample indices in native sample rate
         start_sample = int(start_sec * native_sr)
-        num_samples = int(self.segment_sec * native_sr)
+        stop_sample = start_sample + int(self.segment_sec * native_sr)
 
-        # Load just this segment (efficient partial decode)
-        waveform, sr = torchaudio.load(
+        # Load segment as float32 numpy array, shape [frames, channels]
+        # sf.read start/stop are sample indices (like frame_offset/num_frames)
+        audio_np, sr = sf.read(
             str(audio_path),
-            frame_offset=start_sample,
-            num_frames=num_samples,
+            start=start_sample,
+            stop=stop_sample,
+            dtype='float32',
+            always_2d=True,
         )
+
+        # Convert to [channels, frames] tensor for the extractor
+        waveform = torch.from_numpy(audio_np.T)
 
         # WhisperSpectrogramExtractor handles resampling to 16kHz,
         # mono conversion, and padding/truncation to [1, 80, 3000]
