@@ -229,6 +229,14 @@ class PianoTranscriptionModel(nn.Module):
         3. Sample from distribution (or take argmax for greedy)
         4. Append predicted token
         5. Repeat until EOS or max_length
+
+        Performance note: This is O(n²) in sequence length because
+        nn.TransformerDecoder re-runs full self-attention over all past
+        tokens at each step.  A KV-cache implementation would store K/V
+        projections from previous steps and only compute attention for the
+        new token (O(n) per step).  Requires replacing nn.TransformerDecoder
+        with a custom layer that threads past_key_values through the loop.
+        IMPROVEMENT: add KV cache for production inference speed.
         """
         self.eval() # disables dropout so all neurons are active for deterministic output
         device = next(self.parameters()).device
