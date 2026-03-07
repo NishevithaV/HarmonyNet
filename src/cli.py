@@ -3,7 +3,8 @@ Command-line interface for HarmonyNet
 
 Usage Commands:
     python -m src.cli transcribe input.mp3 -o output.pdf
-    python -m src.cli transcribe input.mp3 --tempo 100 --no-pdf
+    python -m src.cli transcribe input.mp3 --model v2
+    python -m src.cli transcribe input.mp3 --model v2 --checkpoint models/v2/best_model.pt
 """
 
 import click
@@ -27,8 +28,12 @@ def cli():
 @click.option('--tempo', type=float, default=120.0, help='Tempo in BPM (default: 120)')
 @click.option('--time-sig', type=str, default='4/4', help='Time signature (default: 4/4)')
 @click.option('--title', type=str, default=None, help='Score title')
-@click.option('--onset-threshold', type=float, default=0.5, help='Onset detection threshold (0-1)')
-@click.option('--frame-threshold', type=float, default=0.3, help='Note frame threshold (0-1)')
+@click.option('--model', type=click.Choice(['v1', 'v2']), default='v1',
+              help='Inference backend: v1=basic-pitch (fast), v2=SFT model (default: v1)')
+@click.option('--checkpoint', type=click.Path(), default=None,
+              help='V2 checkpoint path (default: models/v2/best_model.pt)')
+@click.option('--onset-threshold', type=float, default=0.5, help='[V1 only] Onset detection threshold (0-1)')
+@click.option('--frame-threshold', type=float, default=0.3, help='[V1 only] Note frame threshold (0-1)')
 @click.option('--no-pdf', is_flag=True, help='Skip PDF rendering, output MusicXML only')
 @click.option('--keep-musicxml', is_flag=True, help='Keep intermediate MusicXML file')
 def transcribe(
@@ -37,6 +42,8 @@ def transcribe(
     tempo: float,
     time_sig: str,
     title: str,
+    model: str,
+    checkpoint: str,
     onset_threshold: float,
     frame_threshold: float,
     no_pdf: bool,
@@ -44,7 +51,10 @@ def transcribe(
 ):
     """
     Transcribe piano audio to sheet music.
-    Currently acceptable audio formats: MP3, WAV, or FLAC file
+    Accepts MP3, WAV, or FLAC.
+
+    Use --model v2 to run the SFT-trained encoder-decoder model instead
+    of the default basic-pitch backend.
     """
     audio_path = Path(audio_path)
 
@@ -64,15 +74,20 @@ def transcribe(
     if title is None:
         title = audio_path.stem
 
-    click.echo(f"Transcribing: {audio_path.name}")
+    click.echo(f"Transcribing: {audio_path.name}  (model={model})")
 
     # Step 1: Transcribe audio to notes
     click.echo("  [1/4] Running ML inference...")
-    transcriber = PianoTranscriber(
-        onset_threshold=onset_threshold,
-        frame_threshold=frame_threshold,
-    )
-    result = transcriber.transcribe(audio_path)
+    if model == 'v2':
+        from .v2.transcribe import transcribe_audio as transcribe_v2
+        ckpt = Path(checkpoint) if checkpoint else None
+        result = transcribe_v2(audio_path, checkpoint_path=ckpt)
+    else:
+        transcriber = PianoTranscriber(
+            onset_threshold=onset_threshold,
+            frame_threshold=frame_threshold,
+        )
+        result = transcriber.transcribe(audio_path)
     click.echo(f"        Found {result.num_notes} notes")
 
     # Step 2: Quantize to musical grid
