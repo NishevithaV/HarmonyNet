@@ -43,7 +43,7 @@ def transcribe_audio(
     audio_path: Path,
     checkpoint_path: Optional[Path] = None,
     whisper_size: str = "tiny",
-    max_gen_tokens: int = 512,
+    max_gen_tokens: int = 128,
     temperature: float = 1.0,
     top_p: float = 0.9,
 ) -> TranscriptionResult:
