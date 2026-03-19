@@ -110,17 +110,45 @@ models/v2/
 
 - **Small training set**: 50 pieces is far below the full MAESTRO dataset (~1,200 pieces). F1 will improve with scale.
 - **O(n²) inference**: No KV cache - `nn.TransformerDecoder` re-runs full self-attention over all past tokens each step at O(n^2). Inference is slow for long sequences. A KV cache implementation is the primary production improvement.
-- **Single clef output**: Same as V1 - no grand staff splitting.
+- **Single clef output**: No grand staff splitting (treble only).
 - **Token budget**: `max_gen_tokens=128` per 10s chunk trades recall for speed (dense passages may be truncated).
+
+---
+
+## Sample Outputs
+
+Pre-generated PDFs are in `data/outputs/`. These were produced by V1 with correct tempo and time signature settings.
+
+| Piece | Tempo | Time Sig | Notes detected | Output |
+|-------|-------|----------|---------------|--------|
+| Für Elise | 72 BPM | 3/8 | 1747 | [fur_elise.pdf](assets/samples/fur_elise.pdf) |
+| Gymnopedie No. 1 | 54 BPM | 3/4 | 841 | [gymnopedie.pdf](assets/samples/gymnopedie.pdf) |
+| C Major Scale | 120 BPM | 4/4 | 8 | [c_major_scale.pdf](assets/samples/c_major_scale.pdf) |
+| Für Elise (V2 model) | — | — | 246 | [fur_elise_v2.pdf](assets/samples/fur_elise_v2.pdf) |
+
+To regenerate them yourself:
+```bash
+# Für Elise
+python -m src.cli transcribe data/inputs/fur_elise.mp3 -o data/outputs/fur_elise.pdf --tempo 72 --time-sig 3/8
+
+# Gymnopedie No. 1
+python -m src.cli transcribe data/inputs/Gymnopedie.mp3 -o data/outputs/gymnopedie.pdf --tempo 54 --time-sig 3/4
+
+# Für Elise with V2 model
+python -m src.cli transcribe data/inputs/fur_elise.mp3 --model v2 -o data/outputs/fur_elise_v2.pdf
+```
 
 ---
 
 ## Setup and Requirements
 
-**Python 3.12+** with virtual environment:
+**Python 3.12+** required.
 
 ```bash
-source venv/bin/activate
+git clone https://github.com/your-username/HarmonyNet.git
+cd HarmonyNet
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -139,6 +167,16 @@ If MuseScore is not installed, the pipeline still produces MusicXML output that 
 ```bash
 python -m src.cli check
 ```
+
+### V2 Model Checkpoint
+
+V2 requires a trained checkpoint at `models/v2/best_model.pt`. Either:
+- **Use the included checkpoint** (if distributed with this repo), or
+- **Train from scratch** — requires MAESTRO v3 audio data:
+```bash
+python -m src.v2.train
+```
+Training on 50 pieces takes ~2–3 hours on an Apple M-series chip.
 
 ---
 
@@ -159,10 +197,9 @@ V1 builds a working end-to-end pipeline using **basic-pitch** (Spotify's ICASSP 
 - Configurable tempo, time signature, and detection thresholds
 
 ### Known V1 Limitations
-- Single treble clef (no bass clef / grand staff splitting)
 - Slightly poor rest detection
-- Dense notation can appear crowded
-- Accuracy improves when tempo is specified explicitly
+- Accuracy improves significantly when tempo and time signature are specified explicitly
+- Pedal/sustain not modeled — held bass notes may show as incorrect durations
 
 ### V1 Tested On
 - C major scale (synthetic, 8 notes) — perfect transcription
@@ -178,7 +215,7 @@ python -m src.cli transcribe input.mp3 -o output.pdf
 
 **With custom tempo and time signature:**
 ```bash
-python -m src.cli transcribe data/inputs/Gymnopedie.mp3 -o data/outputs/gymnopedie.pdf --tempo 70 --time-sig 3/4
+python -m src.cli transcribe data/inputs/Gymnopedie.mp3 -o data/outputs/gymnopedie.pdf --tempo 54 --time-sig 3/4
 ```
 
 **MusicXML only:**
