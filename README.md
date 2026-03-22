@@ -170,9 +170,11 @@ python -m src.cli check
 
 ### V2 Model Checkpoint
 
-V2 requires a trained checkpoint at `models/v2/best_model.pt`. Either:
-- **Use the included checkpoint** (if distributed with this repo), or
-- **Train from scratch** — requires MAESTRO v3 audio data:
+V2 requires a trained checkpoint at `models/v2/best_model.pt`. It will **auto-download** from HuggingFace the first time you run `--model v2`.
+
+Checkpoint hosted at: https://huggingface.co/nishevithav/harmonynet-v2
+
+To train from scratch instead (requires MAESTRO v3 audio data):
 ```bash
 python -m src.v2.train
 ```

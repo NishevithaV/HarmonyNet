@@ -23,8 +23,31 @@ from .spectrogram import WhisperSpectrogramExtractor, WHISPER_SAMPLE_RATE
 
 
 DEFAULT_CHECKPOINT = Path(__file__).parent.parent.parent / "models" / "v2" / "best_model.pt"
+HF_REPO_ID = "nishevithav/harmonynet-v2"
+HF_FILENAME = "best_model.pt"
 SEGMENT_SEC = 10.0
 MIN_NOTE_DURATION = 0.03  # drop notes shorter than 30ms (model artefacts)
+
+
+def _ensure_checkpoint(checkpoint_path: Path) -> Path:
+    """Download checkpoint from HuggingFace if not present locally."""
+    if checkpoint_path.exists():
+        return checkpoint_path
+    print(f"  Checkpoint not found locally. Downloading from HuggingFace ({HF_REPO_ID})...")
+    try:
+        from huggingface_hub import hf_hub_download
+        downloaded = hf_hub_download(repo_id=HF_REPO_ID, filename=HF_FILENAME)
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copy(downloaded, checkpoint_path)
+        print(f"  Saved to {checkpoint_path}")
+    except Exception as e:
+        raise FileNotFoundError(
+            f"Could not download checkpoint: {e}\n"
+            f"Download manually from https://huggingface.co/{HF_REPO_ID} "
+            f"and place at {checkpoint_path}"
+        )
+    return checkpoint_path
 
 
 def load_checkpoint(checkpoint_path: Path, whisper_size: str = "tiny") -> PianoTranscriptionModel:
@@ -51,11 +74,7 @@ def transcribe_audio(
     This is the V2 drop-in replacement for src.inference.PianoTranscriber.transcribe().
     """
     checkpoint_path = checkpoint_path or DEFAULT_CHECKPOINT
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(
-            f"No checkpoint found at {checkpoint_path}. "
-            "Train the model first: python -m src.v2.train"
-        )
+    checkpoint_path = _ensure_checkpoint(checkpoint_path)
 
     device = _get_device()
     extractor = WhisperSpectrogramExtractor()
