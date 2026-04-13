@@ -18,7 +18,7 @@ const STEP_LABELS: Record<Step, string> = {
 interface DoneState {
   num_notes: number;
   num_measures: number;
-  output_type: string;
+  has_pdf: boolean;
   ai_analysis: string | null;
 }
 
@@ -58,8 +58,6 @@ export default function ResultPage() {
 
     return () => clearInterval(poll);
   }, [jobId]);
-
-  const downloadUrl = `${API_URL}/result/${jobId}`;
 
   return (
     <main className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center px-4">
@@ -102,12 +100,22 @@ export default function ResultPage() {
               </div>
             )}
 
-            <a
-              href={downloadUrl}
-              className="block w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition-colors"
-            >
-              Download {result.output_type.toUpperCase()}
-            </a>
+            <div className="space-y-3">
+              {result.has_pdf && (
+                <a
+                  href={`${API_URL}/result/${jobId}/pdf`}
+                  className="block w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition-colors text-center"
+                >
+                  Download PDF
+                </a>
+              )}
+              <a
+                href={`${API_URL}/result/${jobId}/musicxml`}
+                className="block w-full bg-gray-800 hover:bg-gray-700 text-white font-semibold py-3 rounded-xl transition-colors text-center"
+              >
+                Download MusicXML
+              </a>
+            </div>
 
             <a href="/" className="text-gray-500 hover:text-gray-300 text-sm">
               ← Transcribe another piece

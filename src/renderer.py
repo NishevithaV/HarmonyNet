@@ -38,6 +38,8 @@ def find_musescore() -> Optional[Path]:
         ]
     else:  # Linux
         candidates = [
+            Path('/usr/bin/musescore3'),
+            Path('/usr/bin/mscore3'),
             Path('/usr/bin/mscore'),
             Path('/usr/local/bin/mscore4'),
             Path('/usr/bin/musescore4'),
@@ -93,11 +95,10 @@ class PDFRenderer:
             output_path = Path(output_path)
 
         # Run MuseScore CLI
-        cmd = [
-            str(self.musescore_path),
-            str(musicxml_path),
-            '-o', str(output_path),
-        ]
+        # On Linux (Docker) MuseScore needs a virtual display — wrap with xvfb-run
+        cmd = [str(self.musescore_path), str(musicxml_path), '-o', str(output_path)]
+        if platform.system() == 'Linux' and shutil.which('xvfb-run'):
+            cmd = ['xvfb-run', '-a'] + cmd
 
         result = subprocess.run(
             cmd,

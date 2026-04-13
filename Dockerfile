@@ -5,6 +5,7 @@ WORKDIR /app
 # MuseScore dependencies (for PDF rendering)
 RUN apt-get update && apt-get install -y \
     musescore3 \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps

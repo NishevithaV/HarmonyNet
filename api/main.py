@@ -55,7 +55,7 @@ def get_status(job_id: str):
             "status": "done",
             "num_notes": info["num_notes"],
             "num_measures": info["num_measures"],
-            "output_type": info["output_type"],
+            "has_pdf": info["has_pdf"],
             "ai_analysis": info["ai_analysis"],
         }
     if result.state == "FAILURE":
@@ -64,18 +64,27 @@ def get_status(job_id: str):
     return {"status": result.state.lower()}
 
 
-@app.get("/result/{job_id}")
-def get_result(job_id: str):
-    """Download the output PDF (or MusicXML) for a completed job."""
+@app.get("/result/{job_id}/pdf")
+def get_pdf(job_id: str):
+    """Download the PDF for a completed job."""
     result = AsyncResult(job_id, app=celery)
-
     if result.state != "SUCCESS":
         raise HTTPException(status_code=404, detail="Job not complete")
+    if not result.result.get("has_pdf"):
+        raise HTTPException(status_code=404, detail="PDF not available — MuseScore not installed")
+    path = Path(result.result["pdf_path"])
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="PDF file not found")
+    return FileResponse(str(path), media_type="application/pdf", filename=path.name)
 
-    output_path = Path(result.result["output_path"])
 
-    if not output_path.exists():
-        raise HTTPException(status_code=404, detail="Output file not found")
-
-    media_type = "application/pdf" if output_path.suffix == ".pdf" else "application/xml"
-    return FileResponse(str(output_path), media_type=media_type, filename=output_path.name)
+@app.get("/result/{job_id}/musicxml")
+def get_musicxml(job_id: str):
+    """Download the MusicXML for a completed job."""
+    result = AsyncResult(job_id, app=celery)
+    if result.state != "SUCCESS":
+        raise HTTPException(status_code=404, detail="Job not complete")
+    path = Path(result.result["musicxml_path"])
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="MusicXML file not found")
+    return FileResponse(str(path), media_type="application/xml", filename=path.name)

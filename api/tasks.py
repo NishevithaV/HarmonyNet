@@ -55,25 +55,22 @@ def transcribe_task(self, audio_bytes: bytes, filename: str, tempo: float, time_
         encoder = MusicXMLEncoder(title=Path(filename).stem, composer="HarmonyNet")
         encoder.to_musicxml(score, musicxml_path)
 
-        # 5. Render to PDF
+        # 5. Render to PDF (keep MusicXML regardless for separate download)
         self.update_state(state="PROGRESS", meta={"step": "rendering"})
         pdf_path = RESULTS_DIR / f"{job_id}.pdf"
+        has_pdf = False
         if is_musescore_available():
             render_to_pdf(musicxml_path, pdf_path)
-            musicxml_path.unlink(missing_ok=True)
-            output_path = str(pdf_path)
-            output_type = "pdf"
-        else:
-            output_path = str(musicxml_path)
-            output_type = "musicxml"
+            has_pdf = True
 
         # 6. OpenAI analysis
         self.update_state(state="PROGRESS", meta={"step": "analysing"})
         ai_analysis = _get_ai_analysis(result, filename, tempo, time_sig)
 
         return {
-            "output_path": output_path,
-            "output_type": output_type,
+            "pdf_path": str(pdf_path) if has_pdf else None,
+            "musicxml_path": str(musicxml_path),
+            "has_pdf": has_pdf,
             "num_notes": result.num_notes,
             "num_measures": score.num_measures,
             "ai_analysis": ai_analysis,
