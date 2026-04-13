@@ -67,10 +67,12 @@ def transcribe_task(self, audio_bytes: bytes, filename: str, tempo: float, time_
         self.update_state(state="PROGRESS", meta={"step": "analysing"})
         ai_analysis = _get_ai_analysis(result, filename, tempo, time_sig)
 
+        stem = Path(filename).stem
         return {
             "pdf_path": str(pdf_path) if has_pdf else None,
             "musicxml_path": str(musicxml_path),
             "has_pdf": has_pdf,
+            "stem": stem,
             "num_notes": result.num_notes,
             "num_measures": score.num_measures,
             "ai_analysis": ai_analysis,

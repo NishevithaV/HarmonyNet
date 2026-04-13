@@ -75,7 +75,8 @@ def get_pdf(job_id: str):
     path = Path(result.result["pdf_path"])
     if not path.exists():
         raise HTTPException(status_code=404, detail="PDF file not found")
-    return FileResponse(str(path), media_type="application/pdf", filename=path.name)
+    stem = result.result.get("stem", job_id)
+    return FileResponse(str(path), media_type="application/pdf", filename=f"{stem}.pdf")
 
 
 @app.get("/result/{job_id}/musicxml")
@@ -87,4 +88,5 @@ def get_musicxml(job_id: str):
     path = Path(result.result["musicxml_path"])
     if not path.exists():
         raise HTTPException(status_code=404, detail="MusicXML file not found")
-    return FileResponse(str(path), media_type="application/xml", filename=path.name)
+    stem = result.result.get("stem", job_id)
+    return FileResponse(str(path), media_type="application/xml", filename=f"{stem}.musicxml")
