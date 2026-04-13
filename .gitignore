@@ -14,6 +14,10 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Environment variables (real keys — never commit)
+.env
+frontend/.env.local
+
 # --------------------
 # Python
 # --------------------

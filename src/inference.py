@@ -58,7 +58,8 @@ DEFAULT_MIN_NOTE_LENGTH = 0.05  # seconds (converted to ms for basic-pitch)
 # Resolve ONNX model path from ICASSP_2022_MODEL_PATH
 # ICASSP_2022_MODEL_PATH points to .../nmp (TF saved model)
 # We need .../nmp.onnx for the ONNX runtime backend
-ONNX_MODEL_PATH = Path(str(ICASSP_2022_MODEL_PATH) + '.onnx')
+_base = Path(str(ICASSP_2022_MODEL_PATH))
+ONNX_MODEL_PATH = _base if _base.suffix == '.onnx' else Path(str(_base) + '.onnx')
 
 
 class PianoTranscriber:
