@@ -16,4 +16,4 @@ RUN pip install --no-cache-dir -r api_requirements.txt
 
 COPY . .
 
-CMD ["celery", "-A", "api.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+CMD ["sh", "-c", "celery -A api.celery_app worker --loglevel=info --concurrency=1 --broker=$REDIS_URL --backend=$REDIS_URL"]
