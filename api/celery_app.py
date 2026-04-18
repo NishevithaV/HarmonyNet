@@ -1,7 +1,11 @@
 import os
 from celery import Celery
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+REDIS_URL = (
+    os.environ.get("UPSTASH_REDIS_URL") or
+    os.environ.get("REDIS_URL") or
+    "redis://localhost:6379/0"
+)
 
 # params: app name, broker url to pull jobs, backend url to store results, and list of modules to import tasks from
 celery = Celery(
