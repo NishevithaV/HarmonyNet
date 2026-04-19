@@ -1,8 +1,8 @@
 #!/bin/sh
-# Render Web Service requires a bound port. Start a minimal health-check server
-# on $PORT alongside the Celery worker so Render doesn't kill the process.
+# Bind a port so Render doesn't kill this Web Service.
+# serve_forever() keeps the Python process alive in the background.
 python -c "
-import os, threading
+import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 class H(BaseHTTPRequestHandler):
@@ -14,9 +14,8 @@ class H(BaseHTTPRequestHandler):
         pass
 
 port = int(os.environ.get('PORT', 8080))
-server = HTTPServer(('', port), H)
-threading.Thread(target=server.serve_forever, daemon=True).start()
-print(f'[worker_start] Health check listening on port {port}', flush=True)
+print(f'[worker_start] Health check on port {port}', flush=True)
+HTTPServer(('', port), H).serve_forever()
 " &
 
 exec celery -A api.celery_app worker --loglevel=info --concurrency=1
