@@ -16,4 +16,7 @@ RUN pip install --no-cache-dir -r api_requirements.txt
 
 COPY . .
 
-CMD ["celery", "-A", "api.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+COPY worker_start.sh .
+RUN chmod +x worker_start.sh
+
+CMD ["./worker_start.sh"]
