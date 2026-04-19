@@ -1,11 +1,14 @@
 import os
 from celery import Celery
 
-REDIS_URL = (
-    os.environ.get("UPSTASH_REDIS_URL") or
-    os.environ.get("REDIS_URL") or
-    "redis://localhost:6379/0"
-)
+_upstash = os.environ.get("UPSTASH_REDIS_URL", "")
+_redis = os.environ.get("REDIS_URL", "")
+
+REDIS_URL = _upstash or _redis or "redis://localhost:6379/0"
+
+print(f"[celery_app] UPSTASH_REDIS_URL={'set' if _upstash else 'MISSING'}", flush=True)
+print(f"[celery_app] REDIS_URL={'set len={}'.format(len(_redis)) if _redis else 'empty/missing'}", flush=True)
+print(f"[celery_app] Using broker: {REDIS_URL[:40]}...", flush=True)
 
 # Create app without broker/backend so CLI auto_envvar_prefix can't override them
 celery = Celery("harmonynet", include=["api.tasks"])
