@@ -7,19 +7,16 @@ REDIS_URL = (
     "redis://localhost:6379/0"
 )
 
-# params: app name, broker url to pull jobs, backend url to store results, and list of modules to import tasks from
-celery = Celery(
-    "harmonynet",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
-    include=["api.tasks"],
-)
+# Create app without broker/backend so CLI auto_envvar_prefix can't override them
+celery = Celery("harmonynet", include=["api.tasks"])
 
-# params to configure how tasks are serialized, how results are stored, and other options
+# Set broker and backend directly on conf — this takes priority over CLI env vars
 celery.conf.update(
+    broker_url=REDIS_URL,
+    result_backend=REDIS_URL,
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
-    task_track_started=True, # track when tasks start running rather than just when they are sent to the worker
-    result_expires=3600,  # redis auto deletes stored results to prevent unbounded memory growth 
+    task_track_started=True,
+    result_expires=3600,
 )
