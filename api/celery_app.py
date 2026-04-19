@@ -1,4 +1,5 @@
 import os
+import ssl
 from celery import Celery
 
 _upstash = os.environ.get("UPSTASH_REDIS_URL", "")
@@ -14,9 +15,13 @@ print(f"[celery_app] Using broker: {REDIS_URL[:40]}...", flush=True)
 celery = Celery("harmonynet", include=["api.tasks"])
 
 # Set broker and backend directly on conf — this takes priority over CLI env vars
+_ssl_opts = {"ssl_cert_reqs": ssl.CERT_NONE} if REDIS_URL.startswith("rediss://") else {}
+
 celery.conf.update(
     broker_url=REDIS_URL,
     result_backend=REDIS_URL,
+    broker_use_ssl=_ssl_opts or None,
+    redis_backend_use_ssl=_ssl_opts or None,
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
