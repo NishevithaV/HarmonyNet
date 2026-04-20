@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from api.celery_app import celery
+from api.storage import upload as r2_upload
 from src.inference import PianoTranscriber
 from src.quantizer import quantize_transcription
 from src.encoder import MusicXMLEncoder
@@ -63,14 +64,18 @@ def transcribe_task(self, audio_bytes: bytes, filename: str, tempo: float, time_
             render_to_pdf(musicxml_path, pdf_path)
             has_pdf = True
 
-        # 6. OpenAI analysis
+        # 6. Upload to R2
+        self.update_state(state="PROGRESS", meta={"step": "uploading"})
+        stem = Path(filename).stem
+        r2_upload(str(musicxml_path), f"{job_id}.musicxml")
+        if has_pdf:
+            r2_upload(str(pdf_path), f"{job_id}.pdf")
+
+        # 7. OpenAI analysis
         self.update_state(state="PROGRESS", meta={"step": "analysing"})
         ai_analysis = _get_ai_analysis(result, filename, tempo, time_sig)
 
-        stem = Path(filename).stem
         return {
-            "pdf_path": str(pdf_path) if has_pdf else None,
-            "musicxml_path": str(musicxml_path),
             "has_pdf": has_pdf,
             "stem": stem,
             "num_notes": result.num_notes,

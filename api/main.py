@@ -1,11 +1,11 @@
 import os
-from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from celery.result import AsyncResult
 
 from api.celery_app import celery
+from api.storage import presigned_url as r2_url
 from api.tasks import transcribe_task
 
 app = FastAPI(title="HarmonyNet API")
@@ -66,27 +66,21 @@ def get_status(job_id: str):
 
 @app.get("/result/{job_id}/pdf")
 def get_pdf(job_id: str):
-    """Download the PDF for a completed job."""
     result = AsyncResult(job_id, app=celery)
     if result.state != "SUCCESS":
         raise HTTPException(status_code=404, detail="Job not complete")
     if not result.result.get("has_pdf"):
         raise HTTPException(status_code=404, detail="PDF not available — MuseScore not installed")
-    path = Path(result.result["pdf_path"])
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="PDF file not found")
     stem = result.result.get("stem", job_id)
-    return FileResponse(str(path), media_type="application/pdf", filename=f"{stem}.pdf")
+    url = r2_url(f"{job_id}.pdf", f"{stem}.pdf", "application/pdf")
+    return RedirectResponse(url)
 
 
 @app.get("/result/{job_id}/musicxml")
 def get_musicxml(job_id: str):
-    """Download the MusicXML for a completed job."""
     result = AsyncResult(job_id, app=celery)
     if result.state != "SUCCESS":
         raise HTTPException(status_code=404, detail="Job not complete")
-    path = Path(result.result["musicxml_path"])
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="MusicXML file not found")
     stem = result.result.get("stem", job_id)
-    return FileResponse(str(path), media_type="application/xml", filename=f"{stem}.musicxml")
+    url = r2_url(f"{job_id}.musicxml", f"{stem}.musicxml", "application/xml")
+    return RedirectResponse(url)
