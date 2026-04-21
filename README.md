@@ -115,6 +115,62 @@ models/v2/
 
 ---
 
+## Web API
+
+HarmonyNet ships a production-ready REST API built on **FastAPI + Celery + Redis**, with files stored in **Cloudflare R2** and optional **OpenAI** musical analysis.
+
+### Architecture
+
+```
+Client  →  FastAPI  →  Celery task queue  →  Worker
+                           ↑                    ↓
+                        Redis              V1 pipeline → R2 storage
+                       (broker +                ↓
+                        result store)      OpenAI GPT-4o-mini (optional)
+```
+
+| Component | Role |
+|-----------|------|
+| **FastAPI** | Accepts audio uploads, dispatches jobs, serves status/download endpoints |
+| **Celery** | Runs transcription in the background so the HTTP request returns immediately |
+| **Redis (Upstash)** | Broker + result store for Celery, supports `rediss://` SSL |
+| **Cloudflare R2** | Stores completed PDF and MusicXML outputs, served via presigned URLs |
+| **OpenAI GPT-4o-mini** | Optional post-transcription analysis identifies the piece, difficulty, and practice tips |
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/transcribe` | Upload audio, returns `job_id` |
+| `GET` | `/status/{job_id}` | Poll job state (`pending → processing → done`) |
+| `GET` | `/result/{job_id}/pdf` | Redirect to presigned R2 PDF URL |
+| `GET` | `/result/{job_id}/musicxml` | Redirect to presigned R2 MusicXML URL |
+
+### Running locally
+
+```bash
+# Terminal 1 — API server
+uvicorn api.main:app --reload
+
+# Terminal 2 — Celery worker
+celery -A api.celery_app.celery worker --loglevel=info
+```
+
+### Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `UPSTASH_REDIS_URL` | Yes (or `REDIS_URL`) | Redis broker/backend (`rediss://` for Upstash SSL) |
+| `REDIS_URL` | Fallback | Plain Redis URL (local dev) |
+| `R2_ACCOUNT_ID` | Yes | Cloudflare R2 account |
+| `R2_ACCESS_KEY_ID` | Yes | R2 credentials |
+| `R2_SECRET_ACCESS_KEY` | Yes | R2 credentials |
+| `R2_BUCKET` | Yes | R2 bucket name |
+| `OPENAI_API_KEY` | No | Enables GPT-4o-mini analysis; pipeline works without it |
+| `FRONTEND_URL` | No | CORS origin (default: `http://localhost:3000`) |
+
+---
+
 ## Sample Outputs
 
 Pre-generated PDFs are in `data/outputs/`. These were produced by V1 with correct tempo and time signature settings.
