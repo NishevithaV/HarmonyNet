@@ -13,14 +13,12 @@ HarmonyNet is an end-to-end AI pipeline that converts **solo piano audio (MP3/WA
 | Component | Details |
 |-----------|---------|
 | **Encoder** | Whisper (tiny/base) pre-trained audio encoder, Mel spectrogram → hidden states |
-| **Decoder** | Custom 4-layer causal Transformer  cross-attends to encoder output |
+| **Decoder** | Custom 4-layer causal Transformer cross-attends to encoder output |
 | **Input** | 80-bin Mel spectrogram, 10s chunks at 16 kHz (Whisper format: [1, 80, 3000]) |
 | **Output** | MIDI token sequence → NoteEvents → MusicXML → PDF |
 | **Parameters** | ~37M encoder (Whisper tiny) + ~10M decoder (trainable in Phase A) |
 
 ### Token Vocabulary
-
-The decoder outputs a flat token sequence encoding notes as discrete events:
 
 | Token range | Meaning |
 |-------------|---------|
@@ -66,27 +64,22 @@ Note-level Precision / Recall / F1 using the `mir_eval` standard:
 - A predicted note is a **True Positive** if it matches a reference note on the **same pitch** with onset within **50ms**
 - Each reference note can only be matched once (greedy matching by onset proximity)
 
-Run evaluation:
 ```bash
 python -m src.v2.evaluate --checkpoint models/v2/best_model.pt --max-segments 20 --split validation
 ```
 
-> **POC caveat**: The model was trained on a 50-piece subset. F1 scores reflect early-stage training and will improve with more data and training compute. The architecture is sound, training requires more compute power to extend capability.
+> **POC caveat**: The model was trained on a 50-piece subset. F1 scores reflect early-stage training and will improve with more data and training compute. The architecture is sound; scaling data and compute is the primary path to production quality.
 
 ### V2 CLI Usage
 
-**Transcribe using the V2 model:**
 ```bash
+# Transcribe with V2 model
 python -m src.cli transcribe data/inputs/fur_elise.mp3 --model v2 -o output_v2.pdf
-```
 
-**With a specific checkpoint:**
-```bash
+# With a specific checkpoint
 python -m src.cli transcribe data/inputs/fur_elise.mp3 --model v2 --checkpoint models/v2/best_model.pt
-```
 
-**MusicXML only (no PDF):**
-```bash
+# MusicXML only (no PDF)
 python -m src.cli transcribe data/inputs/fur_elise.mp3 --model v2 --no-pdf
 ```
 
@@ -94,7 +87,6 @@ python -m src.cli transcribe data/inputs/fur_elise.mp3 --model v2 --no-pdf
 
 ```
 src/v2/
-├── __init__.py          # Package exports
 ├── model.py             # PianoTranscriptionModel (Whisper encoder + causal decoder)
 ├── tokenizer.py         # Token vocabulary, encode_notes(), decode_tokens()
 ├── spectrogram.py       # WhisperSpectrogramExtractor → [1, 80, 3000]
@@ -109,132 +101,9 @@ models/v2/
 ### Known V2 Limitations (POC)
 
 - **Small training set**: 50 pieces is far below the full MAESTRO dataset (~1,200 pieces). F1 will improve with scale.
-- **O(n²) inference**: No KV cache - `nn.TransformerDecoder` re-runs full self-attention over all past tokens each step at O(n^2). Inference is slow for long sequences. A KV cache implementation is the primary production improvement.
+- **O(n²) inference**: No KV cache — `nn.TransformerDecoder` re-runs full self-attention over all past tokens at O(n²). Inference is slow for long sequences.
 - **Single clef output**: No grand staff splitting (treble only).
 - **Token budget**: `max_gen_tokens=128` per 10s chunk trades recall for speed (dense passages may be truncated).
-
----
-
-## Web API
-
-HarmonyNet ships a production-ready REST API built on **FastAPI + Celery + Redis**, with files stored in **Cloudflare R2** and optional **OpenAI** musical analysis.
-
-### Architecture
-
-```
-Client  →  FastAPI  →  Celery task queue  →  Worker
-                           ↑                    ↓
-                        Redis              V1 pipeline → R2 storage
-                       (broker +                ↓
-                        result store)      OpenAI GPT-4o-mini (optional)
-```
-
-| Component | Role |
-|-----------|------|
-| **FastAPI** | Accepts audio uploads, dispatches jobs, serves status/download endpoints |
-| **Celery** | Runs transcription in the background so the HTTP request returns immediately |
-| **Redis (Upstash)** | Broker + result store for Celery, supports `rediss://` SSL |
-| **Cloudflare R2** | Stores completed PDF and MusicXML outputs, served via presigned URLs |
-| **OpenAI GPT-4o-mini** | Optional post-transcription analysis identifies the piece, difficulty, and practice tips |
-
-### Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/transcribe` | Upload audio, returns `job_id` |
-| `GET` | `/status/{job_id}` | Poll job state (`pending → processing → done`) |
-| `GET` | `/result/{job_id}/pdf` | Redirect to presigned R2 PDF URL |
-| `GET` | `/result/{job_id}/musicxml` | Redirect to presigned R2 MusicXML URL |
-
-### Running locally
-
-```bash
-# Terminal 1 — API server
-uvicorn api.main:app --reload
-
-# Terminal 2 — Celery worker
-celery -A api.celery_app.celery worker --loglevel=info
-```
-
-### Environment variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `UPSTASH_REDIS_URL` | Yes (or `REDIS_URL`) | Redis broker/backend (`rediss://` for Upstash SSL) |
-| `REDIS_URL` | Fallback | Plain Redis URL (local dev) |
-| `R2_ACCOUNT_ID` | Yes | Cloudflare R2 account |
-| `R2_ACCESS_KEY_ID` | Yes | R2 credentials |
-| `R2_SECRET_ACCESS_KEY` | Yes | R2 credentials |
-| `R2_BUCKET` | Yes | R2 bucket name |
-| `OPENAI_API_KEY` | No | Enables GPT-4o-mini analysis; pipeline works without it |
-| `FRONTEND_URL` | No | CORS origin (default: `http://localhost:3000`) |
-
----
-
-## Sample Outputs
-
-Pre-generated PDFs are in `data/outputs/`. These were produced by V1 with correct tempo and time signature settings.
-
-| Piece | Tempo | Time Sig | Notes detected | Output |
-|-------|-------|----------|---------------|--------|
-| Für Elise | 72 BPM | 3/8 | 1747 | [fur_elise.pdf](assets/samples/fur_elise.pdf) |
-| Gymnopedie No. 1 | 54 BPM | 3/4 | 841 | [gymnopedie.pdf](assets/samples/gymnopedie.pdf) |
-| C Major Scale | 120 BPM | 4/4 | 8 | [c_major_scale.pdf](assets/samples/c_major_scale.pdf) |
-| Für Elise (V2 model) | — | — | 246 | [fur_elise_v2.pdf](assets/samples/fur_elise_v2.pdf) |
-
-To regenerate them yourself:
-```bash
-# Für Elise
-python -m src.cli transcribe data/inputs/fur_elise.mp3 -o data/outputs/fur_elise.pdf --tempo 72 --time-sig 3/8
-
-# Gymnopedie No. 1
-python -m src.cli transcribe data/inputs/Gymnopedie.mp3 -o data/outputs/gymnopedie.pdf --tempo 54 --time-sig 3/4
-
-# Für Elise with V2 model
-python -m src.cli transcribe data/inputs/fur_elise.mp3 --model v2 -o data/outputs/fur_elise_v2.pdf
-```
-
----
-
-## Setup and Requirements
-
-**Python 3.12+** required.
-
-```bash
-git clone https://github.com/your-username/HarmonyNet.git
-cd HarmonyNet
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### MuseScore (optional, for PDF rendering)
-
-Install MuseScore 4 from: https://musescore.org/en/download
-
-**Default locations:** <br/>
-macOS:  `/Applications/MuseScore 4.app/Contents/MacOS/mscore` <br/>
-Linux:  `/usr/bin/mscore` or `/usr/local/bin/mscore4` <br/>
-Windows: `C:\Program Files\MuseScore 4\bin\MuseScore4.exe` <br/>
-
-If MuseScore is not installed, the pipeline still produces MusicXML output that can be opened in any notation software.
-
-**Check all dependencies:**
-```bash
-python -m src.cli check
-```
-
-### V2 Model Checkpoint
-
-V2 requires a trained checkpoint at `models/v2/best_model.pt`. It will **auto-download** from HuggingFace the first time you run `--model v2`.
-
-Checkpoint hosted at: https://huggingface.co/nishevithav/harmonynet-v2
-
-To train from scratch instead (requires MAESTRO v3 audio data):
-```bash
-python -m src.v2.train
-```
-Training on 50 pieces takes ~2–3 hours on an Apple M-series chip.
 
 ---
 
@@ -242,46 +111,27 @@ Training on 50 pieces takes ~2–3 hours on an Apple M-series chip.
 
 V1 builds a working end-to-end pipeline using **basic-pitch** (Spotify's ICASSP 2022 model) as the transcription backend. No custom ML training required.
 
-### V1 Pipeline
+**Audio → basic-pitch CNN → NoteEvents → Quantizer → MusicXML → PDF**
 
 ![HarmonyNet pipeline](assets/pipeline_v1.png)
 
-**Audio → basic-pitch CNN → NoteEvents → Quantizer → MusicXML → PDF**
-
-### What V1 does well
 - Accurate pitch detection across the full 88-key piano range (MIDI 21–108)
 - Correct onset timing and note durations
-- Works on real recordings (tested with Fur Elise, Gymnopedie No. 1)
 - Configurable tempo, time signature, and detection thresholds
-
-### Known V1 Limitations
-- Slightly poor rest detection
-- Accuracy improves significantly when tempo and time signature are specified explicitly
-- Pedal/sustain not modeled — held bass notes may show as incorrect durations
-
-### V1 Tested On
-- C major scale (synthetic, 8 notes) — perfect transcription
-- Fur Elise (3 min recording, 1747 notes) — correct opening melody, full piece captured
-- Gymnopedie No. 1 (3 min recording, 841 notes) — sparse texture transcribed cleanly
+- Slightly poor rest detection; pedal/sustain not modeled
 
 ### V1 CLI Usage
 
-**Generate sheet music PDF:**
 ```bash
+# Generate sheet music PDF
 python -m src.cli transcribe input.mp3 -o output.pdf
-```
 
-**With custom tempo and time signature:**
-```bash
+# With custom tempo and time signature
 python -m src.cli transcribe data/inputs/Gymnopedie.mp3 -o data/outputs/gymnopedie.pdf --tempo 54 --time-sig 3/4
-```
 
-**MusicXML only:**
-```bash
+# MusicXML only
 python -m src.cli transcribe input.mp3 --no-pdf
 ```
-
-### V1 CLI Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -299,3 +149,109 @@ python -m src.cli transcribe input.mp3 --no-pdf
 - **basic-pitch** (ICASSP 2022 model) provides the CNN that produces onset, note, and contour predictions from Harmonic CQT spectrograms.
 - **music21** handles MusicXML encoding. **MuseScore** handles PDF rendering.
 - A scipy compatibility shim patches `scipy.signal.gaussian` for scipy 1.14+ (see `src/inference.py`).
+
+### Web API
+
+The V1 pipeline is exposed as a REST API built on **FastAPI + Celery + Redis (Upstash)**, with file storage on **Cloudflare R2** and optional **OpenAI** musical analysis.
+
+```
+Client  →  FastAPI  →  Celery task queue  →  Worker
+                           ↑                    ↓
+                        Redis (Upstash)     V1 pipeline → R2 storage
+                                                ↓
+                                        OpenAI GPT-4o-mini (optional)
+```
+
+| Component | Role |
+|-----------|------|
+| **FastAPI** | Accepts audio uploads, dispatches jobs, serves status/download endpoints |
+| **Celery** | Runs transcription in the background so the HTTP request returns immediately |
+| **Redis (Upstash)** | Broker + result store for Celery, supports `rediss://` SSL |
+| **Cloudflare R2** | Stores completed PDF and MusicXML outputs, served via presigned URLs |
+| **OpenAI GPT-4o-mini** | Optional — identifies the piece, estimates difficulty, gives a practice tip |
+
+**Endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/transcribe` | Upload audio, returns `job_id` |
+| `GET` | `/status/{job_id}` | Poll job state (`pending → processing → done`) |
+| `GET` | `/result/{job_id}/pdf` | Redirect to presigned R2 PDF URL |
+| `GET` | `/result/{job_id}/musicxml` | Redirect to presigned R2 MusicXML URL |
+
+**Running locally:**
+
+```bash
+# Terminal 1 — API server
+uvicorn api.main:app --reload
+
+# Terminal 2 — Celery worker
+celery -A api.celery_app.celery worker --loglevel=info
+```
+
+**Environment variables:**
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `UPSTASH_REDIS_URL` | Yes (or `REDIS_URL`) | Redis broker/backend (`rediss://` for Upstash SSL) |
+| `REDIS_URL` | Fallback | Plain Redis URL for local dev |
+| `R2_ACCOUNT_ID` | Yes | Cloudflare R2 account |
+| `R2_ACCESS_KEY_ID` | Yes | R2 credentials |
+| `R2_SECRET_ACCESS_KEY` | Yes | R2 credentials |
+| `R2_BUCKET` | Yes | R2 bucket name |
+| `OPENAI_API_KEY` | No | Enables GPT-4o-mini analysis; pipeline works without it |
+| `FRONTEND_URL` | No | CORS origin (default: `http://localhost:3000`) |
+
+---
+
+## Setup and Requirements
+
+**Python 3.12+** required.
+
+```bash
+git clone https://github.com/your-username/HarmonyNet.git
+cd HarmonyNet
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+**Check all dependencies:**
+```bash
+python -m src.cli check
+```
+
+### MuseScore (optional, for PDF rendering)
+
+Install MuseScore 4 from: https://musescore.org/en/download
+
+macOS: `/Applications/MuseScore 4.app/Contents/MacOS/mscore`  
+Linux: `/usr/bin/mscore` or `/usr/local/bin/mscore4`  
+Windows: `C:\Program Files\MuseScore 4\bin\MuseScore4.exe`
+
+If MuseScore is not installed, the pipeline still produces MusicXML output that can be opened in any notation software.
+
+### V2 Model Checkpoint
+
+V2 requires a trained checkpoint at `models/v2/best_model.pt`. It will **auto-download** from HuggingFace the first time you run `--model v2`.
+
+Checkpoint hosted at: https://huggingface.co/nishevithav/harmonynet-v2
+
+To train from scratch (requires MAESTRO v3 audio data):
+```bash
+python -m src.v2.train
+```
+Training on 50 pieces takes ~2–3 hours on an Apple M-series chip.
+
+---
+
+## Sample Outputs
+
+Pre-generated PDFs are in `data/outputs/`. V1 outputs used explicit tempo and time signature.
+
+| Piece | Tempo | Time Sig | Notes detected | Output |
+|-------|-------|----------|---------------|--------|
+| Für Elise | 72 BPM | 3/8 | 1747 | [fur_elise.pdf](assets/samples/fur_elise.pdf) |
+| Gymnopedie No. 1 | 54 BPM | 3/4 | 841 | [gymnopedie.pdf](assets/samples/gymnopedie.pdf) |
+| C Major Scale | 120 BPM | 4/4 | 8 | [c_major_scale.pdf](assets/samples/c_major_scale.pdf) |
+| Für Elise (V2 model) | — | — | 246 | [fur_elise_v2.pdf](assets/samples/fur_elise_v2.pdf) |
