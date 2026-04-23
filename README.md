@@ -209,7 +209,7 @@ celery -A api.celery_app.celery worker --loglevel=info
 **Python 3.12+** required.
 
 ```bash
-git clone https://github.com/your-username/HarmonyNet.git
+git clone https://github.com/NishevithaV/HarmonyNet.git
 cd HarmonyNet
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
